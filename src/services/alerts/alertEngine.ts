@@ -2,15 +2,6 @@ import type { AlertRule, HealthAlert, HealthEvent } from "../../types/healthTime
 import { healthTimelineRepository } from "../../storage/healthTimelineRepository";
 import { DEFAULT_ALERT_RULES } from "./defaultRules";
 
-function createAlertId(ruleId: string, astronautId: string, eventIds: string[]): string {
-  const key = [ruleId, astronautId, ...eventIds].sort().join("|");
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-  }
-  return `alert-${hash.toString(16)}`;
-}
-
 export class AlertEngine {
   private rules: AlertRule[] = [];
 
@@ -29,17 +20,23 @@ export class AlertEngine {
   async evaluateAstronaut(astronautId: string, events?: HealthEvent[]): Promise<HealthAlert[]> {
     const sourceEvents = events ?? (await healthTimelineRepository.getEvents(astronautId));
     const existingAlerts = await healthTimelineRepository.getAlerts(astronautId);
-    const existingIds = new Set(existingAlerts.map((alert) => alert.id));
+    const openRuleIds = new Set(
+      existingAlerts
+        .filter((alert) => !alert.acknowledged)
+        .map((alert) => alert.ruleId),
+    );
     const triggered: HealthAlert[] = [];
 
     for (const rule of this.rules) {
       if (!rule.enabled) continue;
+      if (openRuleIds.has(rule.id)) continue;
+
       const result = rule.evaluate(sourceEvents);
       if (!result.triggered) continue;
 
       const eventIds = result.eventIds ?? [];
       const alert: HealthAlert = {
-        id: createAlertId(rule.id, astronautId, eventIds),
+        id: crypto.randomUUID(),
         eventIds,
         astronautId,
         ruleId: rule.id,
@@ -50,9 +47,8 @@ export class AlertEngine {
         acknowledged: false,
       };
 
-      if (existingIds.has(alert.id)) continue;
-
       await healthTimelineRepository.saveAlert(alert);
+      openRuleIds.add(rule.id);
       triggered.push(alert);
     }
 

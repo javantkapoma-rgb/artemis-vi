@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Activity, AlertTriangle, Brain, Clock, Moon, Stethoscope, User } from "lucide-react";
 import type { HealthAlert, HealthEvent } from "../../types/healthTimeline";
 import { healthTimelineRepository } from "../../storage/healthTimelineRepository";
+import { CLINICAL_THRESHOLDS } from "../../engine/clinicalReference";
 
 interface HealthTimelineProps {
   astronautId?: string;
@@ -72,10 +73,66 @@ function severityColor(severity: string): string {
   }
 }
 
+type TimelineSourceFilter = "all" | "sleep" | "wellbeing" | "movement" | "symptom";
+
+const SOURCE_FILTER_OPTIONS: { value: TimelineSourceFilter; label: string }[] = [
+  { value: "all", label: "All sources" },
+  { value: "sleep", label: "Sleep" },
+  { value: "wellbeing", label: "Wellbeing" },
+  { value: "movement", label: "Movement" },
+  { value: "symptom", label: "Symptom" },
+];
+
+function eventCategory(event: HealthEvent): Exclude<TimelineSourceFilter, "all"> | "medical" {
+  switch (event.type) {
+    case "sleep_start":
+    case "sleep_wake":
+      return "sleep";
+    case "stress_checkin":
+      return "wellbeing";
+    case "posture_assessment":
+      return "movement";
+    case "ai_symptom_log":
+      return "symptom";
+    case "medical_note":
+    case "alert_triggered":
+      return "medical";
+    default:
+      return "medical";
+  }
+}
+
+function eventReason(event: HealthEvent): string {
+  const reason = event.payload.reason;
+  if (typeof reason === "string" && reason.trim().length > 0) {
+    return reason;
+  }
+
+  switch (event.type) {
+    case "sleep_start":
+      return "Sleep session started";
+    case "sleep_wake":
+      return "Sleep session ended";
+    case "stress_checkin":
+      return "Wellbeing check-in recorded";
+    case "posture_assessment":
+      return "Movement assessment recorded";
+    case "ai_symptom_log":
+      return "Symptom reported via the AI assistant";
+    case "medical_note":
+      return "Medical note added";
+    case "alert_triggered":
+      return "Alert triggered by the rule engine";
+    default:
+      return "Health event recorded";
+  }
+}
+
 export function HealthTimeline({ astronautId, onSelectEvent }: HealthTimelineProps) {
   const [events, setEvents] = useState<HealthEvent[]>([]);
   const [alerts, setAlerts] = useState<HealthAlert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sourceFilter, setSourceFilter] = useState<TimelineSourceFilter>("all");
 
   useEffect(() => {
     let active = true;
@@ -110,6 +167,11 @@ export function HealthTimeline({ astronautId, onSelectEvent }: HealthTimelinePro
     }
     return map;
   }, [alerts]);
+
+  const filteredEvents = useMemo(() => {
+    if (sourceFilter === "all") return events;
+    return events.filter((event) => eventCategory(event) === sourceFilter);
+  }, [events, sourceFilter]);
 
   function getDurationMs(event: HealthEvent): number | undefined {
     const value = event.payload.durationMs ?? event.payload.duration ?? event.payload.sleepDurationMs;
@@ -146,21 +208,44 @@ export function HealthTimeline({ astronautId, onSelectEvent }: HealthTimelinePro
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <div className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-xl font-bold text-white mb-1">Central Health Timeline</h2>
-            <p className="text-astra-slate text-sm">
-              Unified view of actions, actors, timestamps, and alert-linked health events.
-            </p>
+        <div className="mb-6">
+          <div className="flex items-start justify-between gap-4 mb-3">
+            <div>
+              <h2 className="text-xl font-bold text-white mb-1">Central Health Timeline</h2>
+              <p className="text-astra-slate text-sm">
+                Unified view of actions, actors, timestamps, and alert-linked health events.
+              </p>
+            </div>
+            <div className="text-xs text-astra-slate shrink-0">
+              {filteredEvents.length} of {events.length} events
+            </div>
           </div>
-          <div className="text-xs text-astra-slate">{events.length} events</div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label htmlFor="timeline-source-filter" className="text-xs text-slate-400">
+              Filter by source
+            </label>
+            <select
+              id="timeline-source-filter"
+              value={sourceFilter}
+              onChange={(event) => setSourceFilter(event.target.value as TimelineSourceFilter)}
+              className="bg-slate-950 border border-slate-700 rounded-md px-2 py-1 text-xs text-slate-200 focus:border-cyan-500 outline-none"
+            >
+              {SOURCE_FILTER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="space-y-3">
-          {events.map((event) => {
+          {filteredEvents.map((event) => {
             const linkedAlerts = alertIdsByEvent.get(event.id) ?? [];
             const duration = getDurationMs(event);
             const stress = getStressScore(event);
+            const reason = eventReason(event);
 
             return (
               <button
@@ -179,19 +264,38 @@ export function HealthTimeline({ astronautId, onSelectEvent }: HealthTimelinePro
                         <span className="text-xs font-mono text-astra-slate">{formatTime(event.timestamp)}</span>
                       </div>
                       <p className="text-sm text-white/90 mb-2 break-words">{event.summary}</p>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-astra-slate">
-                        <span className="inline-flex items-center gap-1">
-                          <User size={12} /> {event.actor}
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                        <span className="inline-flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-0.5">
+                          <User size={12} /> Who: {event.actor}
                         </span>
-                        <span>Source: {event.source}</span>
-                        {event.astronautId && <span>Astronaut: {event.astronautId}</span>}
-                        {duration !== undefined && <span>Duration: {formatDuration(duration)}</span>}
-                        {stress !== undefined && <span>Stress: {stress}/5</span>}
-                        {typeof event.payload.reason === "string" && <span>Why: {event.payload.reason}</span>}
-                        {typeof event.metadata?.notes === "string" && event.metadata.notes && (
-                          <span>Notes: {event.metadata.notes}</span>
+                        <span className="inline-flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-0.5">
+                          <Clock size={12} /> When: {formatTime(event.timestamp)}
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-0.5">
+                          Source: {event.source}
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-0.5">
+                          Astronaut: {event.astronautId}
+                        </span>
+                        {duration !== undefined && (
+                          <span className="inline-flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-0.5">
+                            Duration: {formatDuration(duration)}
+                          </span>
+                        )}
+                        {stress !== undefined && (
+                          <span className="inline-flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-0.5">
+                            Stress: {stress}/{CLINICAL_THRESHOLDS.psychological.stressScaleMax}
+                          </span>
                         )}
                       </div>
+                      <p className="mt-2 text-xs text-slate-400 break-words">
+                        <span className="font-semibold text-slate-300">Why:</span> {reason}
+                      </p>
+                      {typeof event.metadata?.notes === "string" && event.metadata.notes && (
+                        <p className="mt-1 text-xs text-slate-400 break-words">
+                          <span className="font-semibold text-slate-300">Notes:</span> {event.metadata.notes}
+                        </p>
+                      )}
                     </div>
                   </div>
 

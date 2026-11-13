@@ -1,5 +1,4 @@
 import type { AlertRule, HealthEvent } from "../../types/healthTimeline";
-import { CLINICAL_ALERT_RULES } from "../../engine/clinicalRules";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -110,10 +109,9 @@ export const DEFAULT_ALERT_RULES: AlertRule[] = [
       return {
         triggered: true,
         title: "Priority Medical Review",
-        message: "Stress score >= 4/10 with a logged physical symptom. Priority medical review required.",
+        message: "Stress score >= 4/5 with a logged physical symptom. Priority medical review required.",
         eventIds: [highStress.id, symptom.id],
       };
     },
   },
-  ...CLINICAL_ALERT_RULES,
 ];

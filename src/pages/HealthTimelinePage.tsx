@@ -1,19 +1,17 @@
 import { useState } from "react";
-import { ChevronLeft, Database, RefreshCw } from "lucide-react";
+import { ChevronLeft, RefreshCw } from "lucide-react";
 import { HealthTimeline } from "../components/timeline/HealthTimeline";
 import { AlertReview } from "../components/alerts/AlertReview";
 import { alertEngine } from "../services/alerts";
-import { seedClinicalDemoData } from "../data/seed";
 
 interface HealthTimelinePageProps {
   astronautId?: string;
   onBack?: () => void;
 }
 
-export function HealthTimelinePage({ astronautId = "astro-1", onBack }: HealthTimelinePageProps) {
+export function HealthTimelinePage({ astronautId = "default-astronaut", onBack }: HealthTimelinePageProps) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [running, setRunning] = useState(false);
-  const [seeding, setSeeding] = useState(false);
 
   async function runEvaluation() {
     setRunning(true);
@@ -22,16 +20,6 @@ export function HealthTimelinePage({ astronautId = "astro-1", onBack }: HealthTi
       setRefreshKey((k) => k + 1);
     } finally {
       setRunning(false);
-    }
-  }
-
-  async function loadDemoData() {
-    setSeeding(true);
-    try {
-      await seedClinicalDemoData();
-      setRefreshKey((k) => k + 1);
-    } finally {
-      setSeeding(false);
     }
   }
 
@@ -55,24 +43,14 @@ export function HealthTimelinePage({ astronautId = "astro-1", onBack }: HealthTi
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={runEvaluation}
-              disabled={running}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm bg-astra-cyan/20 text-astra-cyan hover:bg-astra-cyan/30 border border-astra-cyan/30 disabled:opacity-50"
-            >
-              <RefreshCw size={14} className={running ? "animate-spin" : ""} />
-              {running ? "Evaluating..." : "Run Alert Engine"}
-            </button>
-            <button
-              onClick={loadDemoData}
-              disabled={seeding}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm bg-astra-amber/20 text-astra-amber hover:bg-astra-amber/30 border border-astra-amber/30 disabled:opacity-50"
-            >
-              <Database size={14} className={seeding ? "animate-pulse" : ""} />
-              {seeding ? "Seeding..." : "Load Demo Data"}
-            </button>
-          </div>
+          <button
+            onClick={runEvaluation}
+            disabled={running}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm bg-astra-cyan/20 text-astra-cyan hover:bg-astra-cyan/30 border border-astra-cyan/30 disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={running ? "animate-spin" : ""} />
+            {running ? "Evaluating..." : "Run Alert Engine"}
+          </button>
         </div>
       </header>
 
